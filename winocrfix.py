@@ -22,22 +22,43 @@ def recognize_cv2(img, lang='en'):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGBA)
     return recognize_bytes(img.tobytes(), img.shape[1], img.shape[0], lang)
 
-def picklify(o):
-    if hasattr(o, 'size'):
-        return [picklify(e) for e in o]
-    elif hasattr(o, '__module__'):
-        return dict([(n, picklify(getattr(o, n))) for n in dir(o) if not n.startswith('_')])
-    else:
-        return o
+def dump_rect(rect):
+    return {
+        'x': rect.x,
+        'y': rect.y,
+        'width': rect.width,
+        'height': rect.height
+    }
+
+def dump_ocrword(word):
+    return {
+        'bounding_rect': dump_rect(word.bounding_rect),
+        'text': word.text
+    }
+
+def dump_ocrline(line):
+    words = list(map(dump_ocrword, line.words))
+    return {
+        'text': line.text,
+        'words': words
+    }
+
+def dump_ocrresult(ocrresult):
+    lines = list(map(dump_ocrline, ocrresult.lines))
+    return {
+        'text': ocrresult.text,
+        'text_angle': ocrresult.text_angle,
+        'lines': lines
+    }
 
 async def to_coroutine(awaitable):
     return await awaitable
 
 def recognize_pil_sync(img, lang='en'):
-    return picklify(asyncio.run(to_coroutine(recognize_pil(img, lang))))
+    return dump_ocrresult(asyncio.run(to_coroutine(recognize_pil(img, lang))))
 
 def recognize_cv2_sync(img, lang='en'):
-    return picklify(asyncio.run(to_coroutine(recognize_cv2(img, lang))))
+    return dump_ocrresult(asyncio.run(to_coroutine(recognize_cv2(img, lang))))
 
 def serve():
     import json
@@ -52,7 +73,7 @@ def serve():
     @app.post('/')
     async def recognize(request: Request, lang: str = 'en'):
         result = await recognize_pil(Image.open(BytesIO(await request.body())), lang)
-        return Response(json.dumps(picklify(result), indent=2, ensure_ascii=False), media_type='application/json')
+        return Response(json.dumps(dump_ocrresult(result), indent=2, ensure_ascii=False), media_type='application/json')
     uvicorn.run(app, host='0.0.0.0')
 
 if __name__ == '__main__':
